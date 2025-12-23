@@ -15,6 +15,8 @@ def delivery_report(err, msg):
         print(f"❌ Delivery failed: {err}")
     # We won't print success for every station to avoid flooding your console
 
+
+
 def run_producer():
     p = Producer(KAFKA_CONF)
     topic = "paris-metro-stations"
@@ -22,77 +24,92 @@ def run_producer():
     print(f"🚀 Producer started. Pushing whole batch to '{topic}'")
 
     try:
-        while True:
-            start_time = time.time()
-            
-            # 1. Fetch data from API
-            url = 'https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia/commercial_modes/commercial_mode:Metro/stop_areas'
-            headers = {"apikey": api_key}
-            params = {"count": 1000} 
-            
-            
-            test_data = [
-                    {"id": "test:1", "name": "Aéroport d'Orly", "zone": "Sud"},
-                    {"id": "test:2", "name": "Montparnasse-Bienvenüe", "line": "13"},
-                    {"id": "test:3", "name": "Étienne Marcel", "status": "Ouverte"},
-                    {"id": "test:4", "name": "Château d'Eau", "note": "Check apostrophe \u0027"},
-                    {"id": "test:5", "name": "Bibliothèque François-Mitterrand", "type": "RER"}
-                ]
 
-            try:
-                for station in test_data:
-                    entry = {
-                        "id": station["id"],
-                        "name": station["name"],   
+  
+        # 1. Fetch data from API
+        url = 'https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia/commercial_modes/commercial_mode:Metro/stop_areas'
+        headers = {"apikey": api_key}
+        params = {"count": 1000} 
+        
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        stations = data.get("stop_areas", [])
+        try:
+            # stations = [
+            #         {"id": "stop_area:IDFM:71091", "name": "Vaugirard", "coord": {"lat": "48.840431", "lon": "2.300891"}},
+            #         {"id": "stop_area:IDFM:71117", "name": "Vavin", "coord": {"lat": "48.841888", "lon": "2.32926"}},
+            #         {"id": "stop_area:IDFM:71315", "name": "Victor Hugo", "coord": {"lat": "48.869747", "lon": "2.28527"}},
+            #         {"id": "stop_area:IDFM:478860", "name": "Villejuif - Gustave Roussy", "coord": {"lat": "48.793418", "lon": "2.349241"}},
+            #         {"id": "stop_area:IDFM:70143", "name": "Villejuif - Louis Aragon", "coord": {"lat": "48.787638", "lon": "2.366497"}},
+            #         {"id": "stop_area:IDFM:70375", "name": "Villejuif L\u00e9o Lagrange", "coord": {"lat": "48.805059", "lon": "2.363903"}},
+            #         {"id": "stop_area:IDFM:70248", "name": "Villejuif Paul Vaillant-Couturier", "coord": {"lat": "48.796283", "lon": "2.367631"}},
+            #         {"id": "stop_area:IDFM:71403", "name": "Villiers", "coord": {"lat": "48.881522", "lon": "2.315584"}},
+            #         {"id": "stop_area:IDFM:71113", "name": "Volontaires", "coord": {"lat": "48.841521", "lon": "2.308241"}},
+            #         {"id": "stop_area:IDFM:71750", "name": "Voltaire", "coord": {"lat": "48.858269", "lon": "2.379875"}},
+            #         {"id": "stop_area:IDFM:71423", "name": "Wagram", "coord": {"lat": "48.883487", "lon": "2.303995"}}
+            #     ]
+
+            if stations is None:
+                raise ValueError("No data fetched from API")
+            
+            # 1. SEND THE WIPE COMMAND FIRST
+            print("🧹 Sending wipe command to Sink...")
+            p.produce(topic, value=json.dumps({"control": "CLEAR_DATABASE"}).encode('utf-8'))
+            p.flush() # Ensure the wipe happens before the data arrives
+            
+            
+         
+            # for station in sta:
+            #     entry = {
+            #         "id": station["id"],
+            #         "name": station["name"],   
+            #     }
+            #         # produce() is ASYNCHRONOUS - it just adds to a local buffer
+                
+            #     p.produce(
+            #         topic, 
+            #         key=entry["id"], 
+            #         value=json.dumps(entry).encode('utf-8'),
+            #         callback=delivery_report
+            #     )
+            #     p.poll(0)
+            
+            
+            
+            
+
+            
+            print(f"Fetched {len(stations)} stations. Starting Kafka produce...")
+
+            # 2. Queue the entire batch
+            for station in stations:
+                entry = {
+                    "id": station["id"],
+                    "name": station["name"],
+                    "coord": {
+                        "lat": station["coord"]["lat"],
+                        "lon": station["coord"]["lon"]
                     }
-                        # produce() is ASYNCHRONOUS - it just adds to a local buffer
-                    
-                    p.produce(
-                        topic, 
-                        key=entry["id"], 
-                        value=json.dumps(entry).encode('utf-8'),
-                        callback=delivery_report
-                    )
-                    p.poll(0)
+                }
                 
-                
-                
-                
-                # response = requests.get(url, headers=headers, params=params, timeout=10)
-                # response.raise_for_status()
-                # data = response.json()
-                # stations = data.get("stop_areas", [])
-                
-                # print(f"Fetched {len(stations)} stations. Starting Kafka produce...")
+                # produce() is ASYNCHRONOUS - it just adds to a local buffer
+                p.produce(
+                    topic, 
+                    key=entry["id"], 
+                    value=json.dumps(entry).encode('utf-8'),
+                    callback=delivery_report
+                )
+                # Serve any pending delivery callbacks
+                p.poll(0)
 
-                # # 2. Queue the entire batch
-                # for station in stations:
-                #     entry = {
-                #         "id": station["id"],
-                #         "name": station["name"],
-                #         "coordinates": {
-                #             "lat": station["coord"]["lat"],
-                #             "lon": station["coord"]["lon"]
-                #         }
-                #     }
-                    
-                #     # produce() is ASYNCHRONOUS - it just adds to a local buffer
-                #     p.produce(
-                #         topic, 
-                #         key=entry["id"], 
-                #         value=json.dumps(entry).encode('utf-8'),
-                #         callback=delivery_report
-                #     )
-                #     # Serve any pending delivery callbacks
-                #     p.poll(0)
+            # 3. FLUSH ONCE: This sends the whole buffer to Kafka in one go
+            print("Flushing batch to broker...")
+            p.flush()
+            print(f"Batch sent successfully at {time.strftime('%H:%M:%S')}")
 
-                # 3. FLUSH ONCE: This sends the whole buffer to Kafka in one go
-                print("Flushing batch to broker...")
-                p.flush()
-                print(f"Batch sent successfully at {time.strftime('%H:%M:%S')}")
-
-            except Exception as e:
-                print(f"⚠️ Error during batch: {e}")
+        except Exception as e:
+            print(f"⚠️ Error during batch: {e}")
 
 
     except KeyboardInterrupt:
@@ -102,3 +119,5 @@ def run_producer():
 
 if __name__ == "__main__":
     run_producer()
+    print("Exiting...")
+    exit(0)

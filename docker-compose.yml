@@ -1,3 +1,4 @@
+
 services:
   # --- SCHEDULER: Triggers Python scripts based on time ---
   scheduler:
@@ -38,89 +39,110 @@ services:
           cpus: '0.50'
           memory: 1024M
 
-  # --- WORKER: STATION PRODUCER ---
+  # --- STATION PIPELINE (Manual) ---
   station-producer:
     build: .
     container_name: station-producer
-    restart: unless-stopped
-    depends_on:
-      - kafka
-    volumes:
-      - ./scripts:/app/scripts
+    profiles: [manual]
+    depends_on: [kafka]
+    # FIX: Mount root + Set Working Dir + PYTHONPATH
+    working_dir: /app
+    volumes: 
+      - .:/app
     environment:
+      PYTHONPATH: /app
       KAFKA_SERVER: "kafka:29092"
       PRIM_TOKEN: ${PRIM_TOKEN}
-      PYTHONUNBUFFERED: "1"
-    labels:
-      ofelia.enabled: "true"
-      ofelia.job-exec.station-sync.schedule: "@every 6s"
-      # FIX: Ensure this filename matches your scripts/ folder!
-      ofelia.job-exec.station-sync.command: "python /app/scripts/station_producer_2.py"
-    command: tail -f /dev/null
-    deploy:
-      resources:
-        limits:
-          cpus: '0.10'
-          memory: 128M
+    command: python scripts/station_producer_2.py
 
-  # --- WORKER: ALERT PRODUCER ---
+  app-stations-sink:
+    build: .
+    container_name: app-stations-sink
+    depends_on: [kafka, elasticsearch]
+    # FIX: Mount root + Set Working Dir + PYTHONPATH
+    working_dir: /app
+    volumes: 
+      - .:/app
+    environment:
+      PYTHONPATH: /app
+      KAFKA_SERVER: "kafka:29092"
+      ELASTIC_SERVER: "http://elasticsearch:9200"
+    command: python scripts/stations_sink.py
+
+  # --- ALERT PIPELINE (Automatic every 5m) ---
   alert-producer:
     build: .
     container_name: alert-producer
-    restart: unless-stopped
-    depends_on:
-      - kafka
-    volumes:
-      - ./scripts:/app/scripts
+    profiles: [manual]
+    depends_on: [kafka]
+    # FIX: Mount root + Set Working Dir + PYTHONPATH
+    working_dir: /app
+    volumes: 
+      - .:/app
     environment:
+      PYTHONPATH: /app
       KAFKA_SERVER: "kafka:29092"
       PRIM_TOKEN: ${PRIM_TOKEN}
+    command: python scripts/distrubtion_producer.py
+
+  app-alerts-sink:
+    build: .
+    container_name: app-alerts-sink
+    depends_on: [kafka, elasticsearch]
+    # FIX: Mount root + Set Working Dir + PYTHONPATH
+    working_dir: /app
+    volumes: 
+      - .:/app
+    environment:
+      PYTHONPATH: /app
+      KAFKA_SERVER: "kafka:29092"
+      ELASTIC_SERVER: "http://elasticsearch:9200"
       PYTHONUNBUFFERED: "1"
-    labels:
-      ofelia.enabled: "true"
-      ofelia.job-exec.alert-sync.schedule: "@every 5m"
-      ofelia.job-exec.alert-sync.command: "python /app/scripts/producer_alerts.py"
-    command: tail -f /dev/null
-    deploy:
-      resources:
-        limits:
-          cpus: '0.10'
-          memory: 128M
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      PRIM_TOKEN: ${PRIM_TOKEN}
+
+    command: python scripts/distrubtion_sink.py
 
   # --- SEARCH: ELASTICSEARCH ---
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
-    container_name: elasticsearch
-    restart: unless-stopped
-    ports:
-      - "9200:9200"
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m" 
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 1024M
+      image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
+      container_name: elasticsearch
+      ports:
+        - "9200:9200"
+      volumes:
+        - es_data:/usr/share/elasticsearch/data 
+      environment:
+        - discovery.type=single-node
+        - xpack.security.enabled=false
+        - "ES_JAVA_OPTS=-Xms512m -Xmx512m" 
+      deploy:
+        resources:
+          limits:
+            cpus: '0.50'
+            memory: 1024M
 
-  # --- SINK: MOVING DATA FROM KAFKA TO ELASTIC ---
+  # --- SINK: MOVING DATA FROM KAFKA TO ELASTIC (Generic) ---
   app:
     build: . 
     container_name: app-sink
     depends_on:
       - kafka
       - elasticsearch
+    # FIX: Mount root + Set Working Dir + PYTHONPATH
+    working_dir: /app
     volumes:
-      - ./scripts:/app/scripts
+      - .:/app
     environment:
+      PYTHONPATH: /app
       KAFKA_SERVER: "kafka:29092"
       ELASTIC_SERVER: "http://elasticsearch:9200"
       PYTHONUNBUFFERED: "1"
-    # The Sink should run continuously, not on a schedule
-    command: python /app/scripts/stations_sink.py
+    command: python scripts/stations_sink.py
     deploy:
       resources:
         limits:
           cpus: '0.25'
           memory: 256M
+
+volumes:
+  es_data:
