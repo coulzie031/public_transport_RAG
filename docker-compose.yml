@@ -1,6 +1,34 @@
-
 services:
-  # --- SCHEDULER: Triggers Python scripts based on time ---
+  # --- NEW: AGENT SERVICE (Gradio + LLM) ---
+ 
+  paris-agent:
+    build: .
+    container_name: paris-agent
+    ports:
+      - "7860:7860"
+    depends_on:
+      - elasticsearch
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      GRADIO_SERVER_NAME: "0.0.0.0"
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      PRIM_TOKEN: ${PRIM_TOKEN}
+      ELASTIC_SERVER: "http://elasticsearch:9200"
+      KAFKA_SERVER: "kafka:29092"
+    dns:
+      - 8.8.8.8
+    command: python agent_2.py
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2048M
+
+  # --- SCHEDULER ---
   scheduler:
     image: mcuadros/ofelia:latest
     container_name: scheduler
@@ -11,7 +39,7 @@ services:
     command: daemon --docker
     restart: unless-stopped
 
-  # --- INFRASTRUCTURE: KAFKA (KRaft Mode) ---
+  # --- KAFKA ---
   kafka:
     image: confluentinc/cp-kafka:latest
     container_name: kafka
@@ -32,20 +60,20 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_HEAP_OPTS: "-Xmx512M -Xms512M" 
+      KAFKA_HEAP_OPTS: "-Xmx512M -Xms512M"
     deploy:
       resources:
         limits:
           cpus: '0.50'
           memory: 1024M
 
-  # --- STATION PIPELINE (Manual) ---
+  # --- STATION PIPELINE ---
   station-producer:
     build: .
     container_name: station-producer
     profiles: [manual]
-    depends_on: [kafka]
-    # FIX: Mount root + Set Working Dir + PYTHONPATH
+    depends_on: 
+      - kafka
     working_dir: /app
     volumes: 
       - .:/app
@@ -58,8 +86,9 @@ services:
   app-stations-sink:
     build: .
     container_name: app-stations-sink
-    depends_on: [kafka, elasticsearch]
-    # FIX: Mount root + Set Working Dir + PYTHONPATH
+    depends_on: 
+      - kafka
+      - elasticsearch
     working_dir: /app
     volumes: 
       - .:/app
@@ -69,13 +98,13 @@ services:
       ELASTIC_SERVER: "http://elasticsearch:9200"
     command: python scripts/stations_sink.py
 
-  # --- ALERT PIPELINE (Automatic every 5m) ---
+  # --- ALERT PIPELINE ---
   alert-producer:
     build: .
     container_name: alert-producer
     profiles: [manual]
-    depends_on: [kafka]
-    # FIX: Mount root + Set Working Dir + PYTHONPATH
+    depends_on: 
+      - kafka
     working_dir: /app
     volumes: 
       - .:/app
@@ -85,11 +114,13 @@ services:
       PRIM_TOKEN: ${PRIM_TOKEN}
     command: python scripts/distrubtion_producer.py
 
+  # --- FIX: app-alerts-sink (Strict Mapping) ---
   app-alerts-sink:
     build: .
     container_name: app-alerts-sink
-    depends_on: [kafka, elasticsearch]
-    # FIX: Mount root + Set Working Dir + PYTHONPATH
+    depends_on: 
+      - kafka
+      - elasticsearch
     working_dir: /app
     volumes: 
       - .:/app
@@ -100,10 +131,9 @@ services:
       PYTHONUNBUFFERED: "1"
       NVIDIA_API_KEY: ${NVIDIA_API_KEY}
       PRIM_TOKEN: ${PRIM_TOKEN}
-
     command: python scripts/distrubtion_sink.py
 
-  # --- SEARCH: ELASTICSEARCH ---
+  # --- ELASTICSEARCH ---
   elasticsearch:
       image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
       container_name: elasticsearch
@@ -111,6 +141,7 @@ services:
         - "9200:9200"
       volumes:
         - es_data:/usr/share/elasticsearch/data 
+      # ES often prefers list syntax for Java opts
       environment:
         - discovery.type=single-node
         - xpack.security.enabled=false
@@ -121,14 +152,13 @@ services:
             cpus: '0.50'
             memory: 1024M
 
-  # --- SINK: MOVING DATA FROM KAFKA TO ELASTIC (Generic) ---
+  # --- GENERIC SINK ---
   app:
     build: . 
     container_name: app-sink
     depends_on:
       - kafka
       - elasticsearch
-    # FIX: Mount root + Set Working Dir + PYTHONPATH
     working_dir: /app
     volumes:
       - .:/app
