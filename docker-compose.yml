@@ -21,7 +21,7 @@ services:
       KAFKA_SERVER: "kafka:29092"
     dns:
       - 8.8.8.8
-    command: python agent_2.py
+    command: python agent.py
     deploy:
       resources:
         limits:
@@ -81,7 +81,7 @@ services:
       PYTHONPATH: /app
       KAFKA_SERVER: "kafka:29092"
       PRIM_TOKEN: ${PRIM_TOKEN}
-    command: python scripts/station_producer_2.py
+    command: python scripts/station_producer.py
 
   app-stations-sink:
     build: .
@@ -112,7 +112,7 @@ services:
       PYTHONPATH: /app
       KAFKA_SERVER: "kafka:29092"
       PRIM_TOKEN: ${PRIM_TOKEN}
-    command: python scripts/distrubtion_producer.py
+    command: python scripts/disturbance_producer.py
 
   # --- FIX: app-alerts-sink (Strict Mapping) ---
   app-alerts-sink:
@@ -131,7 +131,7 @@ services:
       PYTHONUNBUFFERED: "1"
       NVIDIA_API_KEY: ${NVIDIA_API_KEY}
       PRIM_TOKEN: ${PRIM_TOKEN}
-    command: python scripts/distrubtion_sink.py
+    command: python scripts/disturbance_sink.py
 
   # --- ELASTICSEARCH ---
   elasticsearch:
