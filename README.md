@@ -75,11 +75,16 @@ PRIM_TOKEN=your-prim-idfm-token-here
 
 ### 3. Build and Run
 
-This command builds the Python images and starts all services (Agent, Kafka, Elastic, etc.).
+This command builds the Docker images and starts all core services (Agent, Kafka, Elasticsearch, sinks, etc.).
 
 ```bash
 docker-compose up -d --build
+```
+The data ingestion producers are intentionally not started automatically in order to limit unnecessary calls to external APIs. They must be launched manually once to initialize the data.
 
+```bash
+docker-compose --profile manual run --rm station-producer
+docker-compose --profile manual run --rm alert-producer
 ```
 
 ### 4. Access the App

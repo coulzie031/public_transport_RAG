@@ -43,7 +43,8 @@ def run_sink():
     create_index_if_not_exists(es)
 
     consumer = Consumer(KAFKA_CONF)
-    consumer.subscribe(['stations'])
+    #consumer.subscribe(['stations'])
+    consumer.subscribe(['paris-metro-stations'])
 
     print(f"🚀 Stations Sink Started (Text Mode)...")
 
