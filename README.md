@@ -18,6 +18,12 @@ The project is built with **Python**, **Gradio**, and **Docker**, and integrates
 
 ---
 
+## Demonstration
+
+https://github.com/user-attachments/assets/a4fcd87d-37d7-4357-9b71-2fdd88007ed9
+
+---
+
 ## 🏗️ Architecture
 
 The system runs completely inside **Docker**.
