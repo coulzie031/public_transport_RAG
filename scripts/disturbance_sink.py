@@ -16,6 +16,7 @@ except ImportError:
 # --- CONFIG ---
 VECTOR_DIMS = 1024 
 INDEX_NAME = "paris-disruptions"
+TOPIC = "paris-disruptions-metro"
 KAFKA_CONF = {
     'bootstrap.servers': os.environ.get('KAFKA_SERVER', 'kafka:29092'),
     'group.id': 'nvidia-sink-group-v1',
@@ -33,6 +34,7 @@ def create_index_if_not_exists(es):
                     "title": {"type": "text"},
                     "description": {"type": "text"},
                     "impact": {"type": "keyword"},
+                    "mode": {"type": "keyword"},
                     "embedding_vector": {
                         "type": "dense_vector",
                         "dims": VECTOR_DIMS,
@@ -66,7 +68,7 @@ def run_sink():
     while True:
         try:
             consumer = Consumer(KAFKA_CONF)
-            consumer.subscribe([INDEX_NAME])
+            consumer.subscribe([TOPIC])
 
             # --- INNER LOOP: PROCESSES MESSAGES ---
             while True:
@@ -84,11 +86,25 @@ def run_sink():
                     val = msg.value()
                     if not val: continue
                     data = json.loads(val.decode('utf-8'))
-
+                    
                     # 1. WIPE SIGNAL
                     if data.get("control") == "CLEAR_ALERTS":
-                        print("🧹 Clearing alerts...")
-                        es.delete_by_query(index=INDEX_NAME, body={"query": {"match_all": {}}})
+                        mode_to_wipe = data.get("mode")
+
+                        if mode_to_wipe:
+                            print(f"🧹 Clearing alerts for mode={mode_to_wipe}...")
+                            es.delete_by_query(
+                                index=INDEX_NAME,
+                                body={"query": {"term": {"mode": mode_to_wipe}}},
+                                conflicts="proceed"
+                            )
+                        else:
+                            print("🧹 Clearing ALL alerts (no mode specified)...")
+                            es.delete_by_query(
+                                index=INDEX_NAME, 
+                                body={"query": {"match_all": {}}},
+                                conflicts="proceed"
+                            )
                         continue
 
                     # 2. EMBEDDING (Remote API)

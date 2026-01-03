@@ -22,9 +22,8 @@ def create_index_if_not_exists(es):
                     "id": {"type": "keyword"},
                     # Standard text field with fuzzy capabilities
                     "name": {"type": "text", "analyzer": "standard"}, 
-                    "city": {"type": "keyword"},
-                    "lines": {"type": "keyword"},
-                    "coordinates": {"type": "geo_point"}
+                    "coordinates": {"type": "geo_point"},
+                    "mode": {"type": "keyword"}
                 }
             }
         }
@@ -43,8 +42,7 @@ def run_sink():
     create_index_if_not_exists(es)
 
     consumer = Consumer(KAFKA_CONF)
-    #consumer.subscribe(['stations'])
-    consumer.subscribe(['paris-metro-stations'])
+    consumer.subscribe(['stations'])
 
     print(f"🚀 Stations Sink Started (Text Mode)...")
 
@@ -60,9 +58,29 @@ def run_sink():
             val = msg.value()
             if not val: continue
             data = json.loads(val.decode('utf-8'))
+            
+         # 1. WIPE SIGNAL
+            if data.get("control") == "CLEAR_ALERTS":
+                mode_to_wipe = data.get("mode")
+
+                if mode_to_wipe:
+                    print(f"🧹 Clearing alerts for mode={mode_to_wipe}...")
+                    es.delete_by_query(
+                        index=INDEX_NAME,
+                        body={"query": {"term": {"mode": mode_to_wipe}}},
+                        conflicts="proceed"
+                    )
+                else:
+                    print("🧹 Clearing ALL alerts (no mode specified)...")
+                    es.delete_by_query(
+                        index=INDEX_NAME, 
+                        body={"query": {"match_all": {}}},
+                        conflicts="proceed"
+                    )
+                continue
 
             # Just index the raw data. No API calls needed!
-            es.index(index=INDEX_NAME, id=data['id'], document=data)
+            es.index(index=INDEX_NAME, id=data['name'], document=data)
             print(f"✅ Indexed: {data.get('name')}")
 
         except Exception as e:

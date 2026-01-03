@@ -1,6 +1,7 @@
+version: '3'
+
 services:
   # --- NEW: AGENT SERVICE (Gradio + LLM) ---
- 
   paris-agent:
     build: .
     container_name: paris-agent
@@ -28,7 +29,7 @@ services:
           cpus: '1.0'
           memory: 2048M
 
-  # --- SCHEDULER ---
+  # --- SCHEDULER (Optional, mostly for Alerts) ---
   scheduler:
     image: mcuadros/ofelia:latest
     container_name: scheduler
@@ -50,23 +51,20 @@ services:
       KAFKA_PROCESS_ROLES: 'broker,controller'
       KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
-
       KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093'
       KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
       KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
-
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
 
-
-  # --- STATION PIPELINE ---
+  # --- STATION PIPELINE (RUNS ONCE & EXITS) ---
   station-producer:
     build: .
     container_name: station-producer
-    profiles: [manual]
+    # Removed 'profiles: [manual]' -> Starts automatically
     depends_on: 
       - kafka
     working_dir: /app
@@ -76,6 +74,8 @@ services:
       PYTHONPATH: /app
       KAFKA_SERVER: "kafka:29092"
       PRIM_TOKEN: ${PRIM_TOKEN}
+    # Logic: Runs the script, finishes, and the container stops (Status: Exited 0).
+    # Since stations don't change often, running once on boot is perfect.
     command: python scripts/station_producer.py
 
   app-stations-sink:
@@ -97,7 +97,7 @@ services:
   alert-producer:
     build: .
     container_name: alert-producer
-    profiles: [manual]
+    profiles: [manual] # Keeps this manual unless you want it auto too
     depends_on: 
       - kafka
     working_dir: /app
@@ -109,7 +109,6 @@ services:
       PRIM_TOKEN: ${PRIM_TOKEN}
     command: python scripts/disturbance_producer.py
 
-  # --- FIX: app-alerts-sink (Strict Mapping) ---
   app-alerts-sink:
     build: .
     container_name: app-alerts-sink
@@ -136,7 +135,6 @@ services:
         - "9200:9200"
       volumes:
         - es_data:/usr/share/elasticsearch/data 
-      # ES often prefers list syntax for Java opts
       environment:
         - discovery.type=single-node
         - xpack.security.enabled=false
@@ -147,7 +145,7 @@ services:
             cpus: '0.50'
             memory: 1024M
 
-  # --- GENERIC SINK ---
+  # --- GENERIC SINK (Optional/Redundant if specific sinks exist) ---
   app:
     build: . 
     container_name: app-sink

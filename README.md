@@ -61,33 +61,77 @@ git clone <your-repo-url>
 cd public_transport_RAG
 
 ```
+Here is a polished, professional version for your `README.md`. I have improved the structure, clarity, and formatting while keeping all the technical details accurate.
+
+---
 
 ### 2. Configure Environment Variables
 
-Create a `.env` file in the root directory. This keeps your keys secure.
+Create a `.env` file in the root directory to store your credentials and configuration safely.
 
 ```ini
 # .env file
+
+# API Keys
 NVIDIA_API_KEY=nvapi-your-key-here
 PRIM_TOKEN=your-prim-idfm-token-here
 
+# Producer Configuration
+# Set to 'false' for testing (saves API quota) or 'true' for live updates (runs every 5 mins)
+CONTINUOUS_RUN=false 
+RUN_INTERVAL_SECONDS=300
+
 ```
 
-### 3. Build and Run
+> **Tip:** We recommend keeping `CONTINUOUS_RUN=false` during initial testing to avoid hitting API rate limits.
 
-This command builds the Docker images and starts all core services (Agent, Kafka, Elasticsearch, sinks, etc.).
+### 3. Build and Start Services
+
+Build the Docker images and start the core infrastructure (Agent, Kafka, Elasticsearch, and Sinks).
 
 ```bash
 docker-compose up -d --build
+
 ```
-The data ingestion producers are intentionally not started automatically in order to limit unnecessary calls to external APIs. They must be launched manually once to initialize the data.
+
+**Note:** The data ingestion producers (`station-producer` and `alert-producer`) are **not** started automatically. This is intentional to prevent unnecessary API calls on startup. You must launch them manually after the system is ready.
+
+### 4. Verify Elasticsearch Availability
+
+Elasticsearch takes a few moments to initialize. Before generating data, verify that the database is healthy and ready to accept connections.
+
+Run the following command:
+
+```bash
+curl -X GET "localhost:9200/"
+
+```
+
+* **❌ If the connection fails** (e.g., `Connection reset by peer` or `Connection refused`):
+Wait 1-2 minutes and try again.
+* **✅ If you receive a JSON response** (similar to below), the system is ready:
+```json
+{
+  "name" : "docker-cluster",
+  "version" : { ... },
+  "tagline" : "You Know, for Search"
+}
+
+```
+
+
+
+### 5. Initialize Data
+
+Once Elasticsearch is confirmed running, trigger the producers manually to populate the database with the latest station and disruption data.
 
 ```bash
 docker-compose --profile manual run --rm station-producer
 docker-compose --profile manual run --rm alert-producer
+
 ```
 
-### 4. Access the App
+### 5. Access the App
 
 Open your browser and go to:
 👉 **[http://localhost:7860](https://www.google.com/search?q=http://localhost:7860)**
